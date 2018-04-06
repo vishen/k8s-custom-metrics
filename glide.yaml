@@ -1,0 +1,17 @@
+package: github.com/vishen/k8s-custom-metrics
+import:
+- package: github.com/kubernetes-incubator/custom-metrics-apiserver
+  subpackages:
+  - pkg/cmd/server
+- package: k8s.io/apimachinery
+  subpackages:
+  - pkg/labels
+  - pkg/runtime/schema
+  - pkg/util/wait
+- package: k8s.io/apiserver
+  subpackages:
+  - pkg/util/logs
+- package: k8s.io/metrics
+  subpackages:
+  - pkg/apis/custom_metrics
+- package: github.com/spf13/pflag
