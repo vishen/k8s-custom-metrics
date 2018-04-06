@@ -6,10 +6,14 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/util/logs"
@@ -19,11 +23,36 @@ import (
 	"github.com/kubernetes-incubator/custom-metrics-apiserver/pkg/provider"
 )
 
+const (
+	maxHttpRequestCustomMetric = 30
+)
+
+var (
+	httpRequestCustomMetric = 0
+)
+
 type MyCustomMetricsProvider struct{}
 
 func (c *MyCustomMetricsProvider) ListAllMetrics() []provider.MetricInfo {
-	fmt.Printf("ListAllMetrics\n")
-	return []provider.MetricInfo{}
+	metrics := []provider.MetricInfo{
+		provider.MetricInfo{
+			GroupResource: schema.GroupResource{
+				Resource: "pods",
+			},
+			Namespaced: true,
+			Metric:     "http_requests_custom_metric",
+		},
+		provider.MetricInfo{
+			GroupResource: schema.GroupResource{
+				Resource: "pods",
+			},
+			Namespaced: true,
+			Metric:     "this-is-my-custom-metric",
+		},
+	}
+	fmt.Printf("ListAllMetrics: %+v\n", metrics)
+
+	return metrics
 }
 
 func (c *MyCustomMetricsProvider) GetRootScopedMetricByName(groupResource schema.GroupResource, name string, metricName string) (*custom_metrics.MetricValue, error) {
@@ -38,6 +67,27 @@ func (c *MyCustomMetricsProvider) GetRootScopedMetricBySelector(groupResource sc
 
 func (c *MyCustomMetricsProvider) GetNamespacedMetricByName(groupResource schema.GroupResource, namespace string, name string, metricName string) (*custom_metrics.MetricValue, error) {
 	fmt.Printf("GetNamespacedMetricByName: groupResource=%+v, namespace=%s, name=%s, metricName=%s\n", groupResource, namespace, name, metricName)
+
+	if metricName == "http_requests_custom_metric" && name == "sample-metrics-app" && namespace == "default" {
+		httpRequestCustomMetric += 1
+		if httpRequestCustomMetric > maxHttpRequestCustomMetric {
+			httpRequestCustomMetric = 0
+		}
+		cm := custom_metrics.MetricValue{
+			DescribedObject: custom_metrics.ObjectReference{
+				APIVersion: groupResource.Group + "/" + k8sruntime.APIVersionInternal,
+				Name:       name,
+				Namespace:  namespace,
+			},
+			MetricName: "http_requests_custom_metric",
+			Timestamp:  metav1.Time{time.Now()},
+			Value:      *resource.NewMilliQuantity(int64(httpRequestCustomMetric*1000.0), resource.DecimalSI),
+		}
+
+		fmt.Printf("Found metric: %+v\n", cm)
+		return &cm, nil
+	}
+
 	return nil, fmt.Errorf("Unable to get scoped metric by name '%s'", metricName)
 }
 
